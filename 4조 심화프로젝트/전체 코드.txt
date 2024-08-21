@@ -1,0 +1,891 @@
+#define _CRT_SECURE_NO_WARNINGS
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <conio.h>
+#include <time.h>
+#include <Windows.h>
+#include <mmsystem.h>
+#pragma comment(lib, "winmm.lib")
+
+#define MAX_LEVEL 50 // 최대 레벨 설정 50레벨이 최대
+#define EXP_PER_LEVEL 100 // 레벨 당 필요 경험치
+
+// 캐릭터 구조체 설정 (필요한 스탯들)
+typedef struct
+{
+    char name[50]; // 이름
+    int level; // 레벨
+    int exp; // 경험치
+    int health; // 현재 체력
+    int max_health; // 최대 체력
+    int mana; // 마나
+    int max_mana; // 최대 마나
+    int attack; // 공격력
+    int defense; // 방어력
+    int gold; // 소지 골드
+} Character;
+
+// 몬스터 구조체
+typedef struct
+{
+    char name[50]; // 몬스터의 이름
+    int health; // 현재 체력
+    int attack; // 공격력
+    int defense; // 방어력
+    int gold_drop; // 처치 시 드랍하는 골드 양
+} Monster;
+
+// 아이템 구조체
+typedef struct
+{
+    char name[50]; // 아이템 이름
+    int type; // 1: 무기, 2: 방어구, 3: 소모품
+    int value; // 무기일 경우 공격력 증가량, 방어구일 경우 방어력 증가량, 소모품일 경우 회복량 등
+    int price; // 아이템 가격
+} Item;
+
+// 네모 박스 출력 함수
+void print_box(const char* messages[], int num_lines)
+{
+    int max_len = 0;
+
+    // 가장 긴 문자열의 길이를 찾음
+    for (int i = 0; i < num_lines; i++)
+    {
+        int len = strlen(messages[i]);
+        if (len > max_len)
+        {
+            max_len = len;
+        }
+    }
+
+    int width = max_len + 4;
+
+    // 위쪽 테두리
+    printf("┌");
+    for (int i = 0; i < width; i++) printf("─");
+    printf("┐\n");
+
+    // 메시지 줄
+    for (int i = 0; i < num_lines; i++)
+    {
+        printf("│  %s", messages[i]);
+        // 남은 공간에 공백 추가
+        for (int j = strlen(messages[i]); j < max_len; j++)
+        {
+            printf(" ");
+        }
+        printf("  │\n");
+    }
+
+    // 아래쪽 테두리
+    printf("└");
+    for (int i = 0; i < width; i++) printf("─");
+    printf("┘\n");
+}
+
+// 네모 박스 입력 함수
+int print_box_with_input(const char* messages[], int num_lines)
+{
+    print_box(messages, num_lines);
+
+    int choice;
+    printf("입력: ");
+    scanf_s("%d", &choice);
+    getchar(); // 입력 버퍼 비우기
+
+    return choice;
+}
+
+// 상점 구매시 코인 사운드
+void PlayCoinSound() {
+    PlaySound(TEXT("coin.wav"), NULL, SND_FILENAME | SND_ASYNC);
+}
+
+// 상점 입장시 사운드
+void PlayMarketSound() {
+    PlaySound(TEXT("market.wav"), NULL, SND_FILENAME | SND_ASYNC);
+}
+
+// 메뉴 사운드
+void PlayMenuSound() {
+    PlaySound(TEXT("menu.wav"), NULL, SND_FILENAME | SND_ASYNC);
+}
+
+// 수련장 사운드
+void PlayTrainingSound() {
+    PlaySound(TEXT("training.wav"), NULL, SND_FILENAME | SND_ASYNC);
+}
+
+// 그린우드 지역 사운드
+void PlayGreenWoodSound() {
+    PlaySound(TEXT("greenwood.wav"), NULL, SND_FILENAME | SND_ASYNC);
+}
+
+// 사막의 신전 지역 사운드
+void PlayDesertSound() {
+    PlaySound(TEXT("desert.wav"), NULL, SND_FILENAME | SND_ASYNC);
+}
+
+// 얼음 협곡 지역 사운드
+void PlayIceSound() {
+    PlaySound(TEXT("ice.wav"), NULL, SND_FILENAME | SND_ASYNC);
+}
+
+// 용암 동굴 지역 사운드
+void PlayLavaSound() {
+    PlaySound(TEXT("lava.wav"), NULL, SND_FILENAME | SND_ASYNC);
+}
+
+// 폐허의 성 지역 사운드
+void PlayLastSound() {
+    PlaySound(TEXT("last.wav"), NULL, SND_FILENAME | SND_ASYNC);
+}
+
+// 왕의 알현실 지역 사운드
+void PlayBossSound() {
+    PlaySound(TEXT("boss.wav"), NULL, SND_FILENAME | SND_ASYNC);
+}
+
+// 게임 오버 사운드
+void PlayGameOverSound() {
+    PlaySound(TEXT("gameover.wav"), NULL, SND_FILENAME | SND_ASYNC);
+}
+
+void PlayEndingSound() {
+    PlaySound(TEXT("ending.wav"), NULL, SND_FILENAME | SND_ASYNC);
+}
+
+// 플레이어의 스탯을 출력하는 함수
+void print_stats(Character* player)
+{
+    char stats[7][50];
+    snprintf(stats[0], sizeof(stats[0]), "레벨: %d", player->level);
+    snprintf(stats[1], sizeof(stats[1]), "경험치: %d", player->exp);
+    snprintf(stats[2], sizeof(stats[2]), "체력: %d/%d", player->health, player->max_health);
+    snprintf(stats[3], sizeof(stats[3]), "마나: %d", player->mana);
+    snprintf(stats[4], sizeof(stats[4]), "공격력: %d", player->attack);
+    snprintf(stats[5], sizeof(stats[5]), "방어력: %d", player->defense);
+    snprintf(stats[6], sizeof(stats[6]), "골드: %d", player->gold);
+
+    const char* stat_messages[] = { stats[0], stats[1], stats[2], stats[3], stats[4], stats[5], stats[6]};
+    print_box(stat_messages, 7);
+}
+
+// 도주 처리 함수
+int playerEscape(Character* player, Monster* enemy)
+{
+    int escape_chance = rand() % 100; // 0~99 사이의 랜덤 숫자 생성
+    if (escape_chance < 50) { // 50% 확률로 도주 성공
+        const char* escape_success_message[] = { "도주에 성공했습니다!" };
+        print_box(escape_success_message, 1);
+        return 1; // 도주 성공
+    }
+    else {
+        const char* escape_fail_message[] = { "도주에 실패했습니다!" };
+        print_box(escape_fail_message, 1);
+        return 0; // 도주 실패
+    }
+}
+
+// 전투 함수
+int Battle(Character* player, Monster* enemy)
+{
+    int player_turn = 1; // 플레이어의 차례인지 여부를 나타내는 변수 (True: 플레이어 턴, False: 몬스터 턴)
+    int damage; // 공격으로 인한 데미지를 저장하는 변수
+    int escape_result; // 도주 결과 저장 변수
+
+    const char* start_message[] = { "*** 전투 시작 ***" };
+    print_box(start_message, 1);
+    printf("%s과(와) %s의 전투가 시작됩니다!\n", player->name, enemy->name);
+    Sleep(1500);
+
+    while (player->health > 0 && enemy->health > 0) // 플레이어나 몬스터의 체력이 모두 0보다 클 때까지 계속 전투를 반복함
+    {
+        system("cls"); // 화면 초기화
+
+        if (player_turn)
+        {
+            printf("\n%s의 차례 (체력: %d/%d)\n", player->name, player->health, player->max_health); // 플레이어의 이름과 현재 체력을 출력하게함
+
+            const char* action_message[] = {
+                "1. 공격",
+                "2. 방어",
+                "3. 마법 사용",
+                "4. 도주",
+                "행동을 선택하세요 (1-4):"
+            };
+            int choice = print_box_with_input(action_message, 5); // 공격, 방어, 마법 사용, 도주 선택을 입력 받음
+
+            switch (choice)
+            {
+            case 1: { // 공격
+                damage = player->attack - enemy->defense; // 플레이어의 공격에서 몬스터의 방어를 뺀 데미지
+                if (damage < 0) damage = 0; // 데미지가 음수가 아닌 양수가 되도록 보정함
+                enemy->health -= damage; // 몬스터의 체력에서 입힌 데미지만큼 감소
+
+                char attack_message[100];
+                snprintf(attack_message, sizeof(attack_message), "%s이(가) %s을(를) 공격하여 %d의 데미지를 입혔습니다!", player->name, enemy->name, damage);
+                const char* attack_box_message[] = { attack_message };
+                print_box(attack_box_message, 1); // 공격 결과 메시지를 출력함
+                break;
+            }
+            case 2: { // 방어
+                const char* defense_message[] = { "방어를 선택했습니다. 받는 데미지가 줄어듭니다!" };
+                print_box(defense_message, 1); // 방어 메시지를 출력함
+                break;
+            }
+            case 3: { // 마법 사용
+                if (player->mana >= 10) { // 마나가 10 이상일 경우에만 마법 사용 가능
+                    player->mana -= 10; // 마나 소모
+                    damage = player->attack * 2 - enemy->defense; // 마법 공격은 일반 공격의 2배 데미지
+                    if (damage < 0) damage = 0; // 데미지 보정
+                    enemy->health -= damage;
+
+                    char magic_message[100];
+                    snprintf(magic_message, sizeof(magic_message), "%s이(가) 마법을 사용하여 %s에게 %d의 데미지를 입혔습니다!", player->name, enemy->name, damage);
+                    const char* magic_box_message[] = { magic_message };
+                    print_box(magic_box_message, 1); // 마법 공격 결과 메시지를 출력함
+                }
+                else {
+                    const char* no_mana_message[] = { "마나가 부족합니다!" };
+                    print_box(no_mana_message, 1); // 마나 부족 메시지를 출력함
+                }
+                break;
+            }
+            case 4: { // 도주
+                escape_result = playerEscape(player, enemy); // 도주 시도
+                if (escape_result == 1) {
+                    return 0; // 도주 성공 시 전투 종료
+                }
+                break;
+            }
+            default: {
+                const char* invalid_choice_message[] = { "잘못된 선택입니다! 1에서 4 사이의 숫자를 선택하세요." };
+                print_box(invalid_choice_message, 1); // 잘못된 선택 메시지 출력함
+                continue; // 다시 선택하도록 반복문을 계속 실행 시킴
+            }
+            }
+        }
+        else // 몬스터 턴일 경우
+        {
+            printf("\n%s의 차례 (체력: %d)\n", enemy->name, enemy->health);
+            damage = enemy->attack - player->defense;
+            if (damage < 0) damage = 0;
+            player->health -= damage;
+
+            char enemy_attack_message[100];
+            snprintf(enemy_attack_message, sizeof(enemy_attack_message), "%s이(가) %s을(를) 공격하여 %d의 데미지를 입혔습니다!", enemy->name, player->name, damage);
+            const char* enemy_attack_box_message[] = { enemy_attack_message };
+            print_box(enemy_attack_box_message, 1);
+        }
+
+        printf("%s의 체력: %d/%d\n", player->name, player->health, player->max_health);
+        printf("%s의 체력: %d\n", enemy->name, enemy->health);
+
+        player_turn = !player_turn; // 턴을 전환함 (플레이어 <-> 몬스터)
+
+        getchar(); // 엔터 입력 대기
+    }
+
+    system("cls"); // 화면 초기화
+
+    if (player->health <= 0) // 플레이어가 전투 중에 사망한 경우
+    {
+        PlayGameOverSound();
+        const char* game_over_message[] = { "게임 오버" };
+        print_box(game_over_message, 1); // 게임 오버 메시지 출력
+        printf("%s이(가) 전사했습니다.\n", player->name); // 플레이어의 사망 메시지 출력
+        printf("플레이어의 레벨: %d\n", player->level);
+    }
+    else // 몬스터가 전투 중에 사망한 경우
+    {
+        const char* victory_message[] = { "축하합니다!" };
+        print_box(victory_message, 1); // 승리 메시지 출력
+        printf("%s이(가) %s을(를) 물리쳤습니다!\n", player->name, enemy->name); // 전투 승리 메시지 출력
+
+        // 경험치 획득
+        int exp_gain = 50; // 몬스터마다 다른 경험치를 줄 수 있음
+        player->exp += exp_gain; // 플레이어의 경험치 증가
+
+        char exp_message[100];
+        snprintf(exp_message, sizeof(exp_message), "경험치를 %d 획득했습니다. (현재 경험치: %d/%d)", exp_gain, player->exp, EXP_PER_LEVEL);
+        const char* exp_box_message[] = { exp_message };
+        print_box(exp_box_message, 1); // 경험치 획득 메시지를 출력
+
+        // 레벨업 체크
+        while (player->exp >= EXP_PER_LEVEL && player->level < MAX_LEVEL)
+        {
+            player->exp -= EXP_PER_LEVEL; // 경험치 감소
+            player->level++; // 레벨 증가
+            player->attack += 3; // 공격력 증가
+            player->defense += 2;
+            player->max_health += 10; // 최대 체력 증가
+            player->mana += 5; // 마나 증가
+
+            const char* level_up_message[] = { "레벨 업!", "축하합니다! 레벨이 올랐습니다." };
+            print_box(level_up_message, 2); // 레벨업 메시지 출력
+        }
+        return 1; // 승리 시 1을 반환
+    }
+}
+
+// 모험 함수
+int Adventure(Character* player, Monster* enemy, const char* region) // player -> Character 구조체, enemy -> Monster 구조체, region = 이동할 지역의 이름
+{
+    system("cls"); // 화면 초기화
+
+    // 이동 메시지 출력
+    char moving_message[100];
+    snprintf(moving_message, sizeof(moving_message), "%s이(가) %s(으)로 이동하고 있습니다...", player->name, region);
+    const char* moving_box_message[] = { moving_message };
+    print_box(moving_box_message, 1);
+
+    printf("Enter 키를 눌러 계속 진행하세요...");
+    getchar(); // 엔터 입력 대기
+
+    system("cls"); // 화면 초기화
+
+    int battle_result = Battle(player, enemy); // 전투 시작
+
+    if (player->health <= 0) // 플레이어가 전투에서 패배한 경우에
+    {
+        return 0; // 0을 반환함
+    }
+
+    // 전투에서 승리했을 경우 골드를 획득하고 메시지를 출력함
+    if (battle_result == 1) {
+        int gold_drop = enemy->gold_drop;
+        player->gold += gold_drop; // 골드 획득
+
+        char gold_message[100];
+        snprintf(gold_message, sizeof(gold_message), "%s이(가) %d 골드를 획득했습니다.", player->name, gold_drop);
+        const char* gold_box_message[] = { gold_message };
+        print_box(gold_box_message, 1);
+    }
+    
+    getchar(); // 엔터 입력 대기
+
+    return 1; // 승리하면 계속 진행
+}
+
+void Shop(Character* player)
+{
+    PlayMarketSound();
+    // 상점 메뉴 화면 메시지
+    const char* shop_menu_message[] = {
+        "상점에 오신 것을 환영합니다!",
+        "1. 무기 구매",
+        "2. 방어구 구매",
+        "3. 마법 물약 구매",
+        "4. 돌아가기",
+        "행동을 선택하세요 (1-4):"
+    };
+
+    while (1)
+    {
+        system("cls"); // 화면 초기화
+
+        int choice = print_box_with_input(shop_menu_message, 6); // 상점 메뉴 출력 및 선택
+
+        switch (choice) {
+        case 1: {
+            // 공격력 순으로 무기 데이터 생성
+            Item weapons[] = {
+                {"단궁", 1, 8, 40},
+                {"철검", 1, 10, 50},
+                {"쇠뇌", 1, 12, 60},
+                {"화염검", 1, 15, 80},
+                {"어둠의 대검", 1, 22, 140}, // 추가 무기 1
+                {"빙설검", 1, 18, 100},
+                {"전설의 대검", 1, 25, 150},
+                {"천상의 장검", 1, 30, 200}  // 추가 무기 2
+            };
+
+            // 무기 목록 출력 메시지
+            const char* weapons_message[] = {
+                "구매할 무기를 선택하세요:",
+                "1. 단궁 (공격력 +8, 가격: 40)",
+                "2. 철검 (공격력 +10, 가격: 50)",
+                "3. 쇠뇌 (공격력 +12, 가격: 60)",
+                "4. 화염검 (공격력 +15, 가격: 80)",
+                "5. 빙설검 (공격력 +18, 가격: 100)",
+                "6. 어둠의 대검 (공격력 +22, 가격: 140)",
+                "7. 전설의 대검 (공격력 +25, 가격: 150)",
+                "8. 천상의 장검 (공격력 +30, 가격: 200)",
+                "9. 돌아가기",
+                "행동을 선택하세요 (1-9):"
+            };
+
+            int weapon_choice = print_box_with_input(weapons_message, 10);
+
+            // 선택된 무기 처리
+            if (weapon_choice >= 1 && weapon_choice <= 8)
+            {
+                Item selected_weapon = weapons[weapon_choice - 1];
+                if (player->gold >= selected_weapon.price) {
+                    player->gold -= selected_weapon.price;
+                    player->attack += selected_weapon.value;
+
+                    // 구매 메시지 출력
+                    char purchase_message[100];
+                    snprintf(purchase_message, sizeof(purchase_message), "%s을(를) 구매하여 공격력이 %d 만큼 증가했습니다.", selected_weapon.name, selected_weapon.value);
+                    const char* purchase_box_message[] = { purchase_message };
+                    print_box(purchase_box_message, 1);
+                }
+                else
+                {
+                    const char* insufficient_gold_message[] = { "골드가 부족합니다!" };
+                    print_box(insufficient_gold_message, 1);
+                }
+            }
+            else if (weapon_choice == 9)
+            {
+                break; // 돌아가기 선택 시 무기 선택 메뉴를 종료함
+            }
+            else
+            {
+                const char* invalid_choice_message[] = { "잘못된 선택입니다! 1에서 9 사이의 숫자를 선택하세요." };
+                print_box(invalid_choice_message, 1);
+            }
+
+            printf("Enter 키를 눌러 계속 진행하세요...");
+            getchar(); // 엔터 입력 대기
+            break; // 무기 선택 후 상점 메뉴 루프를 종료함
+        }
+        case 2: {
+            // 방어력 순으로 방어구 데이터 생성
+            Item armors[] = {
+                {"가죽 갑옷", 2, 5, 30},
+                {"강철 갑옷", 2, 8, 50},
+                {"마법사의 로브", 2, 10, 70},  // 추가 방어구 1
+                {"드래곤 플레이트", 2, 12, 80},
+                {"티타늄 갑옷", 2, 15, 100},
+                {"신성한 방어구", 2, 20, 150},
+                {"전설의 방어구", 2, 25, 180}  // 추가 방어구 2
+            };
+
+            // 방어구 목록 출력 메시지
+            const char* armors_message[] = {
+                "구매할 방어구를 선택하세요:",
+                "1. 가죽 갑옷 (방어력 +5, 가격: 30)",
+                "2. 강철 갑옷 (방어력 +8, 가격: 50)",
+                "3. 마법사의 로브 (방어력 +10, 가격: 70)", // 추가 방어구 1
+                "4. 드래곤 플레이트 (방어력 +12, 가격: 80)",
+                "5. 티타늄 갑옷 (방어력 +15, 가격: 100)",
+                "6. 신성한 방어구 (방어력 +20, 가격: 150)",
+                "7. 전설의 방어구 (방어력 +25, 가격: 180)", // 추가 방어구 2
+                "8. 돌아가기",
+                "행동을 선택하세요 (1-8):"
+            };
+
+            int armor_choice = print_box_with_input(armors_message, 9);
+
+            // 선택된 방어구 처리
+            if (armor_choice >= 1 && armor_choice <= 7)
+            {
+                Item selected_armor = armors[armor_choice - 1];
+                if (player->gold >= selected_armor.price)
+                {
+                    player->gold -= selected_armor.price;
+                    player->defense += selected_armor.value;
+
+                    // 구매 메시지 출력
+                    char purchase_message[100];
+                    snprintf(purchase_message, sizeof(purchase_message), "%s을(를) 구매하여 방어력이 %d 만큼 증가했습니다.", selected_armor.name, selected_armor.value);
+                    const char* purchase_box_message[] = { purchase_message };
+                    print_box(purchase_box_message, 1);
+                }
+                else
+                {
+                    const char* insufficient_gold_message[] = { "골드가 부족합니다!" };
+                    print_box(insufficient_gold_message, 1);
+                }
+            }
+            else if (armor_choice == 8)
+            {
+                break; // 돌아가기 선택 시 방어구 선택 메뉴를 종료함
+            }
+            else
+            {
+                const char* invalid_choice_message[] = { "잘못된 선택입니다! 1에서 8 사이의 숫자를 선택하세요." };
+                print_box(invalid_choice_message, 1);
+            }
+
+            printf("Enter 키를 눌러 계속 진행하세요...");
+            getchar(); // 엔터 입력 대기
+            break; // 방어구 선택 후 상점 메뉴 루프를 종료함
+        }
+        case 3: {
+            // 회복량 순으로 물약 데이터 생성 (체력 회복과 마나 회복 추가)
+            Item potions[] = {
+                {"소형 회복 물약", 3, 20, 20},
+                {"소형 마나 회복 물약", 3, 20, 20},  // 추가 물약 1
+                {"소형 종합 회복 물약", 3, 20, 50},  // 체력 및 마나 회복
+                {"중형 회복 물약", 3, 40, 40},
+                {"중형 마나 회복 물약", 3, 40, 40},  // 추가 물약 2
+                {"중형 종합 회복 물약", 3, 40, 100}, // 체력 및 마나 회복
+                {"대형 회복 물약", 3, 60, 60},
+                {"대형 마나 회복 물약", 3, 60, 60},  // 추가 물약 3
+                {"대형 종합 회복 물약", 3, 60, 150}  // 체력 및 마나 회복
+            };
+
+            // 물약 목록 출력 메시지
+            const char* potions_message[] = {
+                "구매할 물약을 선택하세요:",
+                "1. 소형 회복 물약 (체력 20 회복, 가격: 20)",
+                "2. 소형 마나 회복 물약 (마나 20 회복, 가격: 20)",  // 추가 물약 1
+                "3. 소형 종합 회복 물약 (체력 + 마나 20 회복, 가격: 50)", // 체력 및 마나 회복
+                "4. 중형 회복 물약 (체력 40 회복, 가격: 40)",
+                "5. 중형 마나 회복 물약 (마나 40 회복, 가격: 40)",  // 추가 물약 2
+                "6. 중형 종합 회복 물약 (체력 + 마나 40 회복, 가격: 100)", // 체력 및 마나 회복
+                "7. 대형 회복 물약 (체력 60 회복, 가격: 60)",
+                "8. 대형 마나 회복 물약 (마나 60 회복, 가격: 60)",  // 추가 물약 3
+                "9. 대형 종합 회복 물약 (체력 + 마나 60 회복, 가격: 150)", // 체력 및 마나 회복
+                "10. 돌아가기",
+                "행동을 선택하세요 (1-10):"
+            };
+
+            int potion_choice = print_box_with_input(potions_message, 11);
+
+            // 선택된 물약 처리
+            if (potion_choice >= 1 && potion_choice <= 9)
+            {
+                Item selected_potion = potions[potion_choice - 1];
+                if (player->gold >= selected_potion.price)
+                {
+                    player->gold -= selected_potion.price;
+
+                    // 회복 아이템 처리
+                    if (potion_choice == 1 || potion_choice == 4 || potion_choice == 7)
+                    {
+                        player->health += selected_potion.value;
+                        if (player->health > player->max_health)
+                        {
+                            player->health = player->max_health;
+                        }
+                    }
+
+                    if (potion_choice == 2 || potion_choice == 5 || potion_choice == 8)
+                    {
+                        player->mana += selected_potion.value;
+                        if (player->mana > player->max_mana)
+                        {
+                            player->mana = player->max_mana;
+                        }
+                    }
+
+                    if (potion_choice == 3 || potion_choice == 6 || potion_choice == 9)
+                    {
+                        player->health += selected_potion.value;
+                        if (player->health > player->max_health)
+                        {
+                            player->health = player->max_health;
+                        }
+
+                        player->mana += selected_potion.value;
+                        if (player->mana > player->max_mana)
+                        {
+                            player->mana = player->max_mana;
+                        }
+                    }
+
+                    // 구매 메시지 출력
+                    char purchase_message[150];
+                    snprintf(purchase_message, sizeof(purchase_message), "%s을(를) 구매하여 체력이 %d, 마나가 %d 회복되었습니다.", selected_potion.name, selected_potion.value, selected_potion.value);
+                    const char* purchase_box_message[] = { purchase_message };
+                    print_box(purchase_box_message, 1);
+                }
+                else
+                {
+                    const char* insufficient_gold_message[] = { "골드가 부족합니다!" };
+                    print_box(insufficient_gold_message, 1);
+                }
+            }
+            else if (potion_choice == 10)
+            {
+                break; // 돌아가기 선택 시 물약 선택 메뉴를 종료함
+            }
+            else
+            {
+                const char* invalid_choice_message[] = { "잘못된 선택입니다! 1에서 10 사이의 숫자를 선택하세요." };
+                print_box(invalid_choice_message, 1);
+            }
+
+            printf("Enter 키를 눌러 계속 진행하세요...");
+            getchar(); // 엔터 입력 대기
+            break; // 물약 선택 후 상점 메뉴 루프를 종료함
+        }
+        case 4:
+            return; // 돌아가기 선택 시 함수 종료
+        default: {
+            const char* invalid_choice_message[] = { "잘못된 선택입니다! 1에서 4 사이의 숫자를 선택하세요." };
+            print_box(invalid_choice_message, 1);
+            break;
+        }
+        }
+    }
+}
+
+
+
+// 수련장 함수
+void Training(Character* player) {
+    system("cls"); // 화면 초기화
+    PlayTrainingSound();
+    const char* train_message[] = { "수련장에서 슬라임과의 훈련을 시작합니다!" };
+    print_box(train_message, 1);
+
+    Monster slime = { "슬라임", 40, 6, 0, 0 };
+
+    Battle(player, &slime); // 슬라임과 전투
+
+    if (player->health > 0) {
+
+        // 레벨업 체크
+        while (player->exp >= EXP_PER_LEVEL && player->level < MAX_LEVEL) {
+            player->exp -= EXP_PER_LEVEL; // 경험치 감소
+            player->level++; // 레벨 증가
+            player->attack += 3; // 공격력 증가
+            player->max_health += 10; // 최대 체력 증가
+            player->health = player->max_health; // 체력 회복
+
+            const char* level_up_message[] = { "레벨 업!", "축하합니다! 레벨이 올랐습니다." };
+            print_box(level_up_message, 2); // 레벨업 메시지 출력
+        }
+    }
+
+    //printf("Enter 키를 눌러 계속 진행하세요...");
+    getchar(); // 엔터 입력 대기
+}
+
+// 메인 메뉴 함수
+void main_menu(Character* player)
+{
+    time_t start_time;
+    time(&start_time);
+
+    const char* exit_message[] = { "게임을 종료합니다." };
+    const char* invalid_choice_message[] = { "잘못된 선택입니다! 1에서 4 사이의 숫자를 선택하세요." };
+
+    while (1)
+    {
+        PlayMenuSound();
+        system("cls"); // 화면 초기화
+
+        // 메인 메뉴 메시지
+        const char* main_menu_message[] = {
+            "1. 수련장",
+            "2. 상점",
+            "3. 모험",
+            "4. 스탯",
+            "5. 종료",
+            "행동을 선택하세요 (1-5):"
+        };
+        int choice = print_box_with_input(main_menu_message, 6);
+
+        switch (choice) {
+        case 1:
+            printf("수련장으로 이동합니다...\n");
+            Training(player);
+            break;
+        case 2:
+            printf("상점으로 이동합니다...\n");
+            Shop(player); // 상점 함수 호출
+            break;
+        case 3: {
+            const char* region_menu_message[] = { // 1스테이지 ~ 5스테이지까지 있으며 스테이지가 높아지면 몬스터들의 기본 스탯도 올라감
+                "모험할 지역을 선택하세요:",
+                "1. 그린 우드",
+                "2. 사막의 신전",
+                "3. 얼음 협곡",
+                "4. 용암 동굴",
+                "5. 폐허의 성",
+                "6. 마왕의 알현실",
+                "행동을 선택하세요 (1-6):"
+            };
+            int region_choice = print_box_with_input(region_menu_message, 7); // 지역 선택
+
+            Monster enemy;
+            const char* region_name;
+            switch (region_choice) {
+            case 1: {
+                PlayGreenWoodSound();
+                const char* monsters[] = { "고블린", "스켈레톤", "오크", "저주받은 나무정령" };
+                strcpy(enemy.name, monsters[rand() % 4]);
+                enemy.health = rand() % 30 + 50; // 몬스터의 체력 설정 부분 50 ~ 79 사이의 값을 체력으로 설정함
+                enemy.attack = rand() % 10 + 10;
+                enemy.defense = rand() % 5 + 5;
+                enemy.gold_drop = rand() % 20 + 10;
+                region_name = "그린 우드";
+                break;
+            }
+            case 2: {
+                PlayDesertSound();
+                const char* monsters[] = { "바실리스크", "미라주", "피닉스", "마크라나" };
+                strcpy(enemy.name, monsters[rand() % 4]);
+                enemy.health = rand() % 40 + 80;
+                enemy.attack = rand() % 15 + 15;
+                enemy.defense = rand() % 8 + 8;
+                enemy.gold_drop = rand() % 30 + 20;
+                region_name = "사막의 신전";
+                break;
+            }
+            case 3: {
+                PlayIceSound();
+                const char* monsters[] = { "얼음 골렘", "프로스트 드래곤", "얼음 요정", "눈보라의 정령" };
+                strcpy(enemy.name, monsters[rand() % 4]);
+                enemy.health = rand() % 50 + 100;
+                enemy.attack = rand() % 20 + 20;
+                enemy.defense = rand() % 10 + 10;
+                enemy.gold_drop = rand() % 40 + 30;
+                region_name = "얼음 협곡";
+                break;
+            }
+            case 4: {
+                PlayLavaSound();
+                const char* monsters[] = { "용", "용의 신전 수호자", "용의 화염", "용의 사령" };
+                strcpy(enemy.name, monsters[rand() % 4]);
+                enemy.health = rand() % 60 + 120;
+                enemy.attack = rand() % 25 + 25;
+                enemy.defense = rand() % 12 + 12;
+                enemy.gold_drop = rand() % 50 + 40;
+                region_name = "용암 동굴";
+                break;
+            }
+            case 5: {
+                PlayLastSound();
+                const char* monsters[] = { "마왕의 기사", "마왕의 혼령", "마왕의 화신" };
+                strcpy(enemy.name, monsters[rand() % 3]);
+                enemy.health = rand() % 80 + 150;
+                enemy.attack = rand() % 30 + 30;
+                enemy.defense = rand() % 15 + 15;
+                enemy.gold_drop = rand() % 60 + 50;
+                region_name = "폐허의 성";
+                break;
+            }
+            case 6: {
+                PlayBossSound();
+                const char* monsters[] = { "마왕" };
+                strcpy(enemy.name, monsters[rand() % 1]);
+                enemy.health = 1000;
+                enemy.attack = 80;
+                enemy.defense = 30;
+                enemy.gold_drop = 0;
+                region_name = "마왕의 알현실";
+                break;
+            }
+            default:
+                print_box(invalid_choice_message, 1);
+                continue;
+            }
+
+            int result = Adventure(player, &enemy, region_name);
+            if (result == 0) {
+                print_box(exit_message, 1); // 체력이 0 이하로 게임 종료될 경우 종료 메시지 출력
+                return;
+            }
+            else if (result == 1 && region_choice == 6) {
+                system("cls");
+                
+                // 게임 종료 시점 기록
+                time_t end_time;
+                time(&end_time);
+
+                double elapsed_time = difftime(end_time, start_time);
+
+                //시간을 분, 초로 변환
+                int minutes = (int)(elapsed_time / 60);
+                int seconds = (int)(elapsed_time) % 60;
+                char time_message[50];
+                snprintf(time_message, sizeof(time_message), "클리어까지 걸린 시간: %d분 %d초", minutes, seconds);
+
+                const char* final_message[] = { "마왕을 처치하고 게임이 종료 되었습니다!..." };
+                print_box(final_message, 1);
+                const char* final_time_message[] = { time_message };
+                print_box(final_time_message, 1);
+                getchar();
+
+                EndCredits();
+                return;
+            }
+            break;
+        }
+        case 4:
+            printf("스탯을 표시합니다...\n");
+            print_stats(player); // 플레이어의 스탯 표시 함수를 호출함
+            break;
+        case 5:
+            print_box(exit_message, 1);
+            return;
+        default:
+            print_box(invalid_choice_message, 1);
+            break;
+        }
+
+        printf("Enter 키를 눌러 계속 진행하세요...");
+        getchar(); // 엔터 입력 대기
+    }
+}
+
+int EndCredits()
+{
+    system("cls"); // 화면 초기화
+    PlayEndingSound();
+    const char* credits[] = {
+        "=================================================",
+        "                    엔딩 크레딧",
+        "=================================================",
+        "게임 개발:",
+        "게임프로그래밍1A 심화 4조",
+        "=================================================",
+        "게임을 플레이해 주셔서 감사합니다!",
+        "================================================="
+    };
+
+    for (int i = 0; i < sizeof(credits) / sizeof(credits[0]); i++)
+    {
+        printf("%s\n", credits[i]);
+        Sleep(1000); // 1초 간격으로 출력
+    }
+
+    printf("\n게임을 종료합니다...\n");
+    Sleep(180000); // 3분 뒤에 프로그램이 종료 됩니다.
+    exit(0); // 프로그램 종료
+}
+
+
+int main()
+{
+    const char* welcome_messages[] = {
+        "텍스트 RPG게임에 오신걸 환영합니다.",
+        "게임을 시작하려면 아무 키나 눌러주세요..."
+    };
+
+    // 게임 시작 화면
+    print_box(welcome_messages, 2);
+
+    // 아무 키나 누르면 다음으로 넘어감
+    _getch();
+
+    srand((unsigned int)time(NULL)); // 난수 시드 설정
+
+    // 플레이어 초기화
+    Character player;
+    strcpy(player.name, "영웅");
+    player.level = 1;
+    player.exp = 0;
+    player.health = 100;
+    player.max_health = 100;
+    player.mana = 50;
+    player.max_mana = 50;
+    player.attack = 10;
+    player.defense = 5;
+    player.gold = 5000;
+
+    main_menu(&player);
+
+    system("pause");
+    return 0;
+}
